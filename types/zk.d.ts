@@ -199,6 +199,30 @@ declare namespace zk {
   };
 
   /**
+   * The app's window, for a screen that adapts to its size (a Home that drops a large block on a
+   * short screen). Lengths are layout pixels at 300 ppi, the unit the app lays out in, so the same
+   * physical size on every Kindle: a Paperwhite 5 is 1236 × 1547, a Scribe 1860 × 2379, a basic
+   * Kindle (KT4) 1078 × 1337. Read when asked: `landscape` turns with the device (only the reader
+   * turns; the app's screens, Home and plugin screens, are portrait). No permission. Needs app 0.11.0.
+   *
+   * @example
+   * const short = zk.display.height < 1400; // a basic Kindle: keep Home's top compact
+   */
+  const display: {
+    /** The window's width in pixels at 300 ppi. */
+    readonly width: number;
+    /** The window's height (the screen under the status bar), in pixels at 300 ppi. */
+    readonly height: number;
+    /**
+     * The Kindle: `"pw5"`, `"kt4"` or `"scribe"`, else the device's name in lower case without
+     * spaces. The desktop build reports the Kindle it imitates.
+     */
+    readonly model: "pw5" | "kt4" | "scribe" | (string & {});
+    /** Wider than tall. */
+    readonly landscape: boolean;
+  };
+
+  /**
    * The user's settings for this plugin: the parsed `settings.json` next to `plugin.json`, or `{}`
    * if there is none. Read-only; the user edits the file over USB. Read when the plugin loads.
    * No permission.
@@ -618,6 +642,8 @@ declare namespace zk {
      * The text of a downloaded book or paper (PDF, EPUB, …), extracted by the app's own engines.
      * Rejects if the attachment isn't downloaded to the Kindle (see {@link Attachment.downloaded})
      * or isn't a document, or if its text is larger than 32 MB. Can take a few seconds for a long book.
+     * A plugin has at most 4 of these under way at once (plugins take turns on one reader): a fifth
+     * rejects at once; await some before asking for more.
      *
      * Format: an EPUB's paragraphs are separated by a blank line (`"\n\n"`), chapters in reading
      * order. A PDF's pages are in order, separated by a form feed (`"\f"`): `text.split("\f")[0]`
@@ -645,14 +671,26 @@ declare namespace zk {
      * looked up in that library; with `library` omitted (or a plain key) the app finds the item
      * by its key across the libraries it shows.
      *
+     * With `annotation` (an {@link Annotation}'s key, needs app 0.11.0) the reader opens the file
+     * that annotation is in and goes to it, as a tap in the app's Notes does. An annotation that
+     * is unknown, deleted, another item's, or not in the `attachment` given rejects with
+     * `"Annotation not found"`; on an app before 0.11.0 the option is ignored and the item opens
+     * where it was left.
+     *
      * **Permission**: `library:read`. Needs app 0.10.0.
      *
      * @example
      * if (e.kind === "tap" && e.id === "continue") await zk.library.open(lastKey);
      * @example
      * await zk.library.open({ key: item.key, library: item.libraryId }, { attachment: pdf.key });
+     * @example
+     * // a highlight, tapped: the reader opens at it (app 0.11.0)
+     * await zk.library.open(passage.itemKey, { annotation: passage.key });
      */
-    function open(item: string | { key: string; library?: number }, options?: { attachment?: string }): Promise<void>;
+    function open(
+      item: string | { key: string; library?: number },
+      options?: { attachment?: string; annotation?: string },
+    ): Promise<void>;
   }
 
   /** Filters for {@link zk.library.items}. They combine: an item must match all that are given. */
@@ -1289,8 +1327,8 @@ declare namespace zk {
     function deck(deck: Omit<DeckBlock, "kind">): DeckBlock;
 
     /**
-     * Library items drawn by the app: a `card` (title, authors, progress) or a `row` per item,
-     * paged like the app's lists. The app resolves the keys itself, so the rows always show the
+     * Library items drawn by the app: a `card` (title, authors, progress) or a `row` per item, or
+     * a `shelf` of cover tiles, paged like the app's lists. The app resolves the keys itself, so the rows always show the
      * item's current title and reading progress, and repaints just this block when they change.
      * Items that are missing, in a switched-off group or unreadable are skipped silently; if all
      * are, `empty` shows (none: the block draws nothing).
@@ -1305,6 +1343,9 @@ declare namespace zk {
      * @example
      * // an item from a group library, with its own label
      * zk.ui.items({ id: "pick", style: "card", items: [{ key: "ABCD2345", library: 12, label: "Up next" }] });
+     * @example
+     * // the books being read, as covers (needs app 0.11.0)
+     * zk.ui.items({ id: "shelf", style: "shelf", items: reading.map((i) => i.key), empty: "Nothing on the shelf" });
      */
     function items(items: Omit<ItemsBlock, "kind">): ItemsBlock;
 
@@ -1394,6 +1435,21 @@ declare namespace zk {
      */
     function notice(text: string, opts?: { id?: string }): NoticeBlock;
 
+    /**
+     * A passage set apart: its text in italics with a rule on its left, at most 5 lines (a longer
+     * one ends with "…"), and its `source` on a line under it. With an `id`, tapping it sends a
+     * `tap` event with that id (open the highlight with {@link zk.library.open}'s `annotation`).
+     * Line breaks in `text` are kept; spaces around it are not. May be on Home's body. Needs app
+     * 0.11.0.
+     *
+     * @example
+     * zk.ui.quote({ text: "It is a truth universally acknowledged…", source: "Pride and Prejudice · p. 1" });
+     * @example
+     * zk.ui.quote({ id: "passage", text: a.text ?? "", source: `${item.title} · p. ${a.pageLabel}` });
+     * // onEvent: if (e.kind === "tap" && e.id === "passage") await zk.library.open(item.key, { annotation: a.key });
+     */
+    function quote(quote: { id?: string; text: string; source?: string }): QuoteBlock;
+
     // ── Navigation ──
 
     /**
@@ -1448,7 +1504,8 @@ declare namespace zk {
       | ButtonsBlock
       | DividerBlock
       | SpaceBlock
-      | NoticeBlock;
+      | NoticeBlock
+      | QuoteBlock;
 
     /** A child of a layout block, or a falsy value to skip (so `cond && block` works). */
     type Child = Block | Falsy;
@@ -1529,8 +1586,21 @@ declare namespace zk {
     interface ItemsBlock {
       kind: "items";
       id: string;
-      /** `"card"`: a large entry per item; `"row"`: a compact line per item. */
-      style: "card" | "row";
+      /**
+       * `"card"`: a large entry per item; `"row"`: a compact line per item; `"shelf"`: cover tiles
+       * in rows.
+       *
+       * A shelf's tile is the item's cover as the app draws it (title and authors on a dark
+       * cover; "PDF" or "WEB" in its corner for a file that isn't an EPUB), a thin progress bar
+       * once it was opened, and one line under it: "13%", "New" or "Read", or the download's
+       * progress while it downloads. The tiles per row follow the screen's width (4 on a
+       * Paperwhite or a Kindle, 6 on a Scribe), and the shelf pages a row at a time. A ref's
+       * `label` isn't shown on a shelf. `"shelf"` needs app 0.11.0 (older apps refuse the tree).
+       *
+       * @example
+       * zk.ui.items({ id: "shelf", style: "shelf", items: keys });
+       */
+      style: "card" | "row" | "shelf";
       items: ItemRef[];
       /** Shown when none of the items can be read. */
       empty?: string;
@@ -1639,6 +1709,17 @@ declare namespace zk {
       id?: string;
     }
 
+    /** See {@link quote}. Needs app 0.11.0. */
+    interface QuoteBlock {
+      kind: "quote";
+      /** The passage: at most 5 lines show. */
+      text: string;
+      /** Where it is from, on one line under it (`"Pride and Prejudice · p. 1"`). */
+      source?: string;
+      /** Makes it tappable: a tap sends a `tap` event with this id. */
+      id?: string;
+    }
+
     /**
      * What `onEvent` receives. Events arrive one at a time, in the order they happened; a
      * pending `change` (typing not yet sent) is always sent before any other event of the same
@@ -1647,7 +1728,8 @@ declare namespace zk {
      * - `open` — the screen is opening; first, before its first render ("Loading…" shows until
      *   it returns). For set-up slower than `render`'s 1 s.
      * - `tap` — a {@link button}, or one of {@link buttons}, by its `id`; the {@link deck}'s card,
-     *   by the deck's `id`; a {@link notice} with an `id` (the last two need app 0.9.0).
+     *   by the deck's `id`; a {@link notice} with an `id` (the last two need app 0.9.0); a
+     *   {@link quote} with an `id` (app 0.11.0).
      * - `select` — a {@link list} row: `id` is the list's, `row` the row's.
      * - `swipe` — the {@link deck}'s card, left or right.
      * - `change` / `submit` — a {@link search} or {@link field}: its whole text.
