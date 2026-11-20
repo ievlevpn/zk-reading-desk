@@ -1277,16 +1277,20 @@ declare namespace zk {
      * @example
      * zk.ui.column([zk.ui.text("Feeds", { style: "title" }), feedList], { gap: "medium" });
      */
-    function column(children: Child[], opts?: { gap?: Gap }): ColumnBlock;
+    function column(children: Child[], opts?: { gap?: Gap; fit?: "page" | "trim"; width?: Width }): ColumnBlock;
 
     /**
-     * Places blocks side by side, sharing the width (e.g. a label and a button). Wraps nothing:
-     * keep it to two or three short blocks.
+     * Places blocks side by side (e.g. a label and a button), up to 12. Wraps nothing: keep it
+     * to a few short blocks. Each child takes what its `width` says (see {@link Width}); the
+     * rest of the width is shared equally by the children that `fill` (the default; buttons are
+     * `"auto"`). `align` places the children vertically when they differ in height (centred unless
+     * it says, as before 0.12); with `"stretch"` each is as tall as the row, and a {@link spacer} in a stretched column takes
+     * the leftover height. `align` and the 12 blocks need app 0.12.0 (older apps: 6 blocks).
      *
      * @example
      * zk.ui.row([zk.ui.text("math.PR · 12 left", { style: "label" }), zk.ui.button({ id: "feeds", title: "Feeds" })]);
      */
-    function row(children: Child[], opts?: { gap?: Gap }): RowBlock;
+    function row(children: Child[], opts?: { gap?: Gap; align?: RowAlign; width?: Width }): RowBlock;
 
     /**
      * Text in one of four styles; `"\n"` breaks a line. `spans` mark bold and italic stretches.
@@ -1296,7 +1300,7 @@ declare namespace zk {
      * zk.ui.text("Gaussian random fields", { style: "title", lines: 2 });
      * zk.ui.text(["Filed into ", { text: "Probability / SPDEs", bold: true }], { style: "meta" });
      */
-    function text(text: string | Span[], opts?: { style?: TextStyle; lines?: number }): TextBlock;
+    function text(text: string | Span[], opts?: TextOptions): TextBlock;
 
     /**
      * A card: title, a meta line, a body (paged with up/down swipes when long), and a badge
@@ -1450,6 +1454,76 @@ declare namespace zk {
      */
     function quote(quote: { id?: string; text: string; source?: string }): QuoteBlock;
 
+    /**
+     * Flexible empty space: in a column that is as tall as its row (a row with `align:
+     * "stretch"`) it takes the height the other children leave; anywhere else it takes no room.
+     * Needs app 0.12.0.
+     *
+     * @example
+     * zk.ui.row([cover, zk.ui.column([title, zk.ui.spacer(), zk.ui.progress(0.4)])], { align: "stretch" });
+     */
+    function spacer(): SpacerBlock;
+
+    /**
+     * A frame around one block: padding, a border, a fill, rounded corners. Text inside an `"ink"`
+     * box is drawn white unless its own `tone` says otherwise. With an `id`, tapping it sends a
+     * `tap` event with that id: the way to make a custom button, a link, a segmented switch.
+     * Needs app 0.12.0.
+     *
+     * @example
+     * zk.ui.box(zk.ui.text("Week", { tone: "inverse" }), { id: "week", pad: "small", fill: "ink", radius: "round" });
+     */
+    function box(child: Block, opts?: { id?: string; pad?: Gap; border?: Border; fill?: Fill; radius?: Radius; width?: Width }): BoxBlock;
+
+    /**
+     * An item's cover as the app draws it, 2:3, as wide as `width` says (default `"fill"`).
+     * Needs app 0.12.0.
+     *
+     * @example
+     * zk.ui.cover(book.key, { width: "25%" });
+     */
+    function cover(item: ItemRef, opts?: { width?: Width }): CoverBlock;
+
+    /**
+     * The app's thin progress bar, `value` from 0 to 1. Needs app 0.12.0.
+     *
+     * @example
+     * zk.ui.progress(0.4);
+     */
+    function progress(value: number, opts?: { width?: Width }): ProgressBlock;
+
+    /**
+     * Makes any block an item: a tap opens it as the app opens items (download, the choice of a
+     * file, the reader), a long press shows its item sheet, and while it downloads the app draws
+     * the status in a small bar over the bottom of the block. An item that can't be read: the
+     * block is drawn but does nothing. Needs app 0.12.0.
+     *
+     * @example
+     * zk.ui.item(book.key, zk.ui.row([zk.ui.cover(book.key, { width: "20%" }), zk.ui.text(book.title)]));
+     */
+    function item(item: ItemRef, child: Block): ItemBlock;
+
+    /**
+     * Cells in rows. `columns`: a number from 1 to 12, or `"auto"` (the default): as many as fit
+     * with each at least `minWidth` (5% to 100% of the grid, default `"25%"`). It pages by rows
+     * like the app's lists, unless `rows` (1 to 20) is given: then only that many rows are drawn,
+     * the rest are not, and it never pages. Needs app 0.12.0.
+     *
+     * @example
+     * zk.ui.grid(books.map((b) => zk.ui.item(b.key, zk.ui.cover(b.key))), { columns: 4, rows: 1 });
+     */
+    function grid(children: Child[], opts?: { columns?: number | "auto"; minWidth?: Percent; gap?: Gap; rows?: number; width?: Width }): GridBlock;
+
+    /**
+     * A PNG from the plugin's package, drawn in greys with its aspect kept. `src` is a path in
+     * the package (never absolute, never with `..`). With an `id` it is tappable. Needs app
+     * 0.12.0.
+     *
+     * @example
+     * zk.ui.image({ src: "images/logo.png", width: "40%" });
+     */
+    function image(image: { src: string; width?: Width; id?: string }): ImageBlock;
+
     // ── Navigation ──
 
     /**
@@ -1505,7 +1579,14 @@ declare namespace zk {
       | DividerBlock
       | SpaceBlock
       | NoticeBlock
-      | QuoteBlock;
+      | QuoteBlock
+      | SpacerBlock
+      | BoxBlock
+      | CoverBlock
+      | ProgressBlock
+      | ItemBlock
+      | GridBlock
+      | ImageBlock;
 
     /** A child of a layout block, or a falsy value to skip (so `cond && block` works). */
     type Child = Block | Falsy;
@@ -1514,7 +1595,51 @@ declare namespace zk {
     type Falsy = null | undefined | false | "" | 0;
 
     /** Spacing between children. */
-    type Gap = "none" | "small" | "medium" | "large";
+    type Gap = "none" | "xsmall" | "small" | "medium" | "large";
+
+    /** A whole percentage from `"1%"` to `"100%"`. */
+    type Percent = `${number}%`;
+
+    /**
+     * How wide a block is, for any block (it matters in a {@link row}, and for a cover, a
+     * progress bar or an image anywhere): `"fill"` shares what the siblings leave, `"auto"` is
+     * its natural width (a text's, a button's), `"<n>%"` is that share of the row's width.
+     * Needs app 0.12.0.
+     */
+    type Width = "fill" | "auto" | Percent;
+
+    /** Where a row's children sit vertically; `"stretch"` makes each as tall as the row. */
+    type RowAlign = "top" | "center" | "bottom" | "stretch";
+
+    /** A {@link box}'s border: none, a hairline or a heavy line. */
+    type Border = "none" | "thin" | "thick";
+
+    /** A {@link box}'s fill: none, a light grey, or ink (text inside is white). */
+    type Fill = "none" | "light" | "ink";
+
+    /** A {@link box}'s corners. */
+    type Radius = "none" | "small" | "round";
+
+    /** Options of {@link text}. Needs app 0.12.0 except `style` and `lines`. */
+    interface TextOptions {
+      /** A preset of font, size, weight and tone; the options below override it. Default `"body"`. */
+      style?: TextStyle;
+      /** At most this many lines, ending with "…". */
+      lines?: number;
+      font?: "serif" | "sans";
+      size?: "xsmall" | "small" | "body" | "large" | "title";
+      weight?: "regular" | "medium" | "bold";
+      /** `"inverse"` is white. Unset inside an `"ink"` box: white; elsewhere the style's. */
+      tone?: "ink" | "secondary" | "inverse";
+      italic?: boolean;
+      /** Uppercase and spaced out: a section label. */
+      caps?: boolean;
+      /** Where its lines sit in its width. Default `"start"`. */
+      align?: "start" | "center" | "end";
+      /** Makes it tappable (a link): a tap sends a `tap` event with this id. */
+      id?: string;
+      width?: Width;
+    }
 
     /** A size of {@link space}. */
     type Size = "small" | "medium" | "large";
@@ -1531,24 +1656,33 @@ declare namespace zk {
       children: Child[];
       /** Default `"small"`. */
       gap?: Gap;
+      /**
+       * Only on the root of a Home body (a screen, or a column inside, refuses it). `"page"`
+       * (default): what doesn't fit is paged. `"trim"`: the children in order while they fit;
+       * the first that doesn't is trimmed if it can be (a grid to the rows that fit, a column to
+       * its children that fit, recursively) and dropped otherwise; everything after it is
+       * dropped; never a pager. Needs app 0.12.0.
+       */
+      fit?: "page" | "trim";
+      width?: Width;
     }
 
     /** See {@link row}. */
     interface RowBlock {
       kind: "row";
+      /** At most 12 (6 before app 0.12.0). */
       children: Child[];
       /** Default `"small"`. */
       gap?: Gap;
+      /** Default `"center"` (as rows were before 0.12). Needs app 0.12.0. */
+      align?: RowAlign;
+      width?: Width;
     }
 
     /** See {@link text}. */
-    interface TextBlock {
+    interface TextBlock extends TextOptions {
       kind: "text";
       text: string | Span[];
-      /** Default `"body"`. */
-      style?: TextStyle;
-      /** At most this many lines, ending with "…". */
-      lines?: number;
     }
 
     /** See {@link card}. */
@@ -1590,8 +1724,8 @@ declare namespace zk {
        * `"card"`: a large entry per item; `"row"`: a compact line per item; `"shelf"`: cover tiles
        * in rows.
        *
-       * A shelf's tile is the item's cover as the app draws it (title and authors on a dark
-       * cover; "PDF" or "WEB" in its corner for a file that isn't an EPUB), a thin progress bar
+       * A shelf's tile is the item's cover as the app draws it (a book in one of three
+       * looks chosen by its key; a paper like a first page; no corner tab; from app 0.12.0), a thin progress bar
        * once it was opened, and one line under it: "13%", "New" or "Read", or the download's
        * progress while it downloads. The tiles per row follow the screen's width (4 on a
        * Paperwhite or a Kindle, 6 on a Scribe), and the shelf pages a row at a time. A ref's
@@ -1720,6 +1854,78 @@ declare namespace zk {
       id?: string;
     }
 
+    /** See {@link spacer}. Needs app 0.12.0. */
+    interface SpacerBlock {
+      kind: "spacer";
+      width?: Width;
+    }
+
+    /** See {@link box}. Needs app 0.12.0. */
+    interface BoxBlock {
+      kind: "box";
+      child: Block;
+      /** Makes it tappable: a tap sends a `tap` event with this id. */
+      id?: string;
+      /** Space between the frame and the child. Default `"none"`. */
+      pad?: Gap;
+      /** Default `"none"`. */
+      border?: Border;
+      /** Default `"none"`. */
+      fill?: Fill;
+      /** Default `"none"`. */
+      radius?: Radius;
+      width?: Width;
+    }
+
+    /** See {@link cover}. Needs app 0.12.0. */
+    interface CoverBlock {
+      kind: "cover";
+      item: ItemRef;
+      /** Default `"fill"`. */
+      width?: Width;
+    }
+
+    /** See {@link progress}. Needs app 0.12.0. */
+    interface ProgressBlock {
+      kind: "progress";
+      /** From 0 to 1. */
+      value: number;
+      width?: Width;
+    }
+
+    /** See {@link item}. Needs app 0.12.0. */
+    interface ItemBlock {
+      kind: "item";
+      item: ItemRef;
+      child: Block;
+      width?: Width;
+    }
+
+    /** See {@link grid}. Needs app 0.12.0. */
+    interface GridBlock {
+      kind: "grid";
+      children: Child[];
+      /** 1 to 12, or `"auto"` (default). */
+      columns?: number | "auto";
+      /** With `"auto"` columns, the narrowest a cell gets: `"5%"` to `"100%"`, default `"25%"`. */
+      minWidth?: Percent;
+      /** Default `"small"`. */
+      gap?: Gap;
+      /** 1 to 20: draw only this many rows, never page. */
+      rows?: number;
+      width?: Width;
+    }
+
+    /** See {@link image}. Needs app 0.12.0. */
+    interface ImageBlock {
+      kind: "image";
+      /** A path in the plugin's package: not absolute, no `..`. */
+      src: string;
+      width?: Width;
+      /** Makes it tappable: a tap sends a `tap` event with this id. */
+      id?: string;
+    }
+
     /**
      * What `onEvent` receives. Events arrive one at a time, in the order they happened; a
      * pending `change` (typing not yet sent) is always sent before any other event of the same
@@ -1729,7 +1935,7 @@ declare namespace zk {
      *   it returns). For set-up slower than `render`'s 1 s.
      * - `tap` — a {@link button}, or one of {@link buttons}, by its `id`; the {@link deck}'s card,
      *   by the deck's `id`; a {@link notice} with an `id` (the last two need app 0.9.0); a
-     *   {@link quote} with an `id` (app 0.11.0).
+     *   {@link quote} with an `id` (app 0.11.0); a {@link box}, an {@link image} or a {@link text} with an `id` (app 0.12.0).
      * - `select` — a {@link list} row: `id` is the list's, `row` the row's.
      * - `swipe` — the {@link deck}'s card, left or right.
      * - `change` / `submit` — a {@link search} or {@link field}: its whole text.

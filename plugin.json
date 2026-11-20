@@ -1,11 +1,11 @@
 {
   "id": "reading-desk",
   "name": "Reading Desk",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "api": 0,
-  "minApp": "0.11.0",
+  "minApp": "0.12.0",
   "author": "Pavel Ievlev",
-  "description": "A Home for reading: what you are in the middle of, a shelf of books, the papers next in line, your pins, what is new in an inbox, and a passage from your highlights each day.",
+  "description": "A Home for reading: the book and the paper you are in, side by side; a row of your pins; what is new in an inbox, or a passage from your highlights each day. All of it one tap from Your desk.",
   "main": "main.js",
   "permissions": ["library:read", "annotations:read"]
 }
