@@ -7,8 +7,8 @@
 //
 // What doesn't fit is left out from the end, which is the order of sacrifice wanted: the passage,
 // then inbox lines, then the pinned row. zk.display only decides what trimming can't: covers about
-// as wide on every Kindle (so how many a row holds), and whether a Scribe's extra room takes a
-// third line and the passage.
+// as wide on every Kindle (so how many a row holds), and whether a Scribe's extra room takes up to
+// five inbox lines and the passage.
 
 import {
   authorsOf,
@@ -28,19 +28,20 @@ import {
   same,
   whenOf,
 } from "./data";
-import { MEDIUM, endLink, heading, lines, pageWidth, pair, perRow, share, shelfRow } from "./pieces";
+import { MEDIUM, endLink, heading, lines, pageWidth, pair, share, shelfRow } from "./pieces";
 
 /** A cover's width in the pair and the pinned row, in pixels: a Paperwhite's, on every Kindle. */
 const COVER = 190;
 /** A Paperwhite or a basic Kindle turned is short: the pair is lower (a smaller cover, titles in 2 lines) so the pins fit under it. */
 const COVER_TURNED = 160;
 
-/** A Scribe's height: room for a third inbox line and the passage under the inbox. */
+/** A Scribe's height: room for up to five inbox lines and the passage under the inbox. */
 const tall = () => zk.display.height >= 2000;
 /** Between the bands: closer on a short screen (a basic Kindle, a Kindle turned). */
 const bandGap = (): zk.ui.Gap => (zk.display.height < 1400 ? "medium" : "large");
-/** Pins in the row: 5 on a Paperwhite, 4 on a basic Kindle, 8 on a Scribe. */
-const pinsPerRow = () => perRow(COVER, pageWidth(), MEDIUM);
+/** Pins in the row: 5 on a Paperwhite, 4 on a basic Kindle, 7 on a Scribe — as many as fit whole at
+ * a cover's width (never rounded up: a narrower tile would cut its title). */
+const pinsPerRow = () => Math.max(1, Math.floor((pageWidth() + MEDIUM) / (COVER + MEDIUM)));
 
 const FIRST_USE =
   "Open a book or a paper and it will wait for you here. Pin things from an item's menu: long-press → More… → Pin to Home.";
@@ -107,7 +108,7 @@ export function registerHome() {
         zk.ui.column(
           [
             heading(`Inbox · ${countOf(unread!.length, unread!.length)} new`, { id: "all-inbox", text: "All ›" }),
-            ...lines(fresh.slice(0, tall() ? 3 : 2).map((item) => ({ item, byline: bylineOf(item), right: whenOf(item.addedAt) }))),
+            ...lines(fresh.slice(0, tall() ? 5 : 2).map((item) => ({ item, byline: bylineOf(item), right: whenOf(item.addedAt) }))),
           ],
           { gap: "small" },
         );

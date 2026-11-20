@@ -113,7 +113,7 @@ export function lines(rows: { item: zk.Item; byline: string; right: string }[]):
   );
 }
 
-/** A segmented switch: one framed row of segments, the selected one in ink; a tap sends its id. */
+/** A segmented switch: one framed row of segments, the selected one in ink; a tap sends its id. Only the frame is rounded (a rounded segment leaves white slivers in its corners). */
 export function segmented(segments: { id: string; text: string }[], selected: string): Block {
   return zk.ui.box(
     zk.ui.row(
@@ -122,7 +122,6 @@ export function segmented(segments: { id: string; text: string }[], selected: st
           id: s.id,
           pad: "small",
           fill: s.id === selected ? "ink" : "none",
-          radius: "small",
         }),
       ),
       { gap: "none" },

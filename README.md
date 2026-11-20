@@ -28,11 +28,11 @@ fit is left out from the end (first the passage, then inbox lines, then the row 
   nothing at all: the other side takes the whole width; neither: no pair. A Paperwhite or a basic
   Kindle turned: smaller covers and titles in 2 lines, so the row of pins fits under the pair.
 - **Pinned** — **All n ›** (every pin) and one row of covers in pin order, minus the pair: 5 on a
-  Paperwhite, 4 on a basic Kindle, 8 on a Scribe (covers are about as wide on every Kindle, so a
+  Paperwhite, 4 on a basic Kindle, 7 on a Scribe (covers are about as wide on every Kindle, so a
   wider screen holds more). A bar under a cover once it was opened.
 - **Inbox · n new** — **All ›** and the newest unread items of the inbox collection as lines:
   title, "authors · year", and when it was added ("today", "yesterday", "Mon", "Nov 12"). 2 lines,
-  3 on a Scribe; minus the pair (n counts every unread item, as Your desk's Inbox n). At most the newest 100 are looked at ("99+").
+  up to 5 on a Scribe; minus the pair (n counts every unread item, as Your desk's Inbox n). At most the newest 100 are looked at ("99+").
 - **A passage** — one of your highlights (40–400 characters, from the newest 300), picked once a
   day and the same all day, in the inbox's band when there is no inbox or nothing new in it, and
   under the inbox on a Scribe. The pick runs after Home has drawn (it then refreshes); until then
