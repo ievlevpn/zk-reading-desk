@@ -1,10 +1,11 @@
-// Your desk (screen `all`, opened from Home's All ›): a switch Reading · Pinned · Inbox n over a
-// grid of covers that pages, the only place Reading Desk pages. The tab is the screen's param (the
-// All › tapped), changed by the switch while the screen is open, and never stored.
+// Your desk (screen `all`, opened from Home's All › / Desk › / Drawer pills):
+// Either a switch Reading · Pinned · Inbox n over a paged cover grid, or a single collection
+// drawer opened from Reading Room's Drawers strip.
 
 import {
   READING_WALK,
   authorsOf,
+  collectionItems,
   countOf,
   inProgress,
   inboxItems,
@@ -14,10 +15,15 @@ import {
   percentOf,
   pinnedItems,
 } from "./data";
-import { LARGE, coverGrid, pageWidth, perRow, segmented } from "./pieces";
+import { LARGE, coverGrid, kicker, pageWidth, perRow, pill, segmented } from "./pieces";
 
 type Tab = "reading" | "pinned" | "inbox";
 const TABS: Tab[] = ["reading", "pinned", "inbox"];
+
+export interface DeskParams {
+  tab?: Tab;
+  collection?: { key: string; library: number; name: string };
+}
 
 const EMPTY: Record<Tab, string> = {
   reading: "Books and papers you open show up here.",
@@ -35,11 +41,34 @@ function caption(i: zk.Item): string {
 
 /** The tab the switch picked on the open screen; null: the param's. */
 let picked: Tab | null = null;
+/** Whether the user dismissed the drawer filter back to the full desk tabs. */
+let clearedDrawer = false;
 
 export function registerDesk() {
-  zk.screen<{ tab?: Tab } | undefined>("all", {
+  zk.screen<DeskParams | undefined>("all", {
     title: "Your desk",
     render: async (params) => {
+      // Opened from a Reading Room Drawer pill: show that collection's covers with a quick exit pill
+      if (params?.collection && !clearedDrawer) {
+        const col = params.collection;
+        const items = await collectionItems({ key: col.key, library: col.library });
+        return zk.ui.column(
+          [
+            zk.ui.row(
+              [
+                kicker(`DRAWER · ${col.name} (${countOf(items.length, items.length)})`),
+                pill("All tabs ›", { id: "exit-drawer", radius: "round" }),
+              ],
+              { align: "center" },
+            ),
+            items.length > 0
+              ? coverGrid(items.map((item) => ({ item, caption: caption(item) })), columns())
+              : zk.ui.text("Nothing in this collection.", { tone: "secondary" }),
+          ],
+          { gap: "large" },
+        );
+      }
+
       const inbox = inboxOf(await loadPrefs());
       const unread = inbox ? await inboxItems(inbox) : null;
       const asked = picked ?? params?.tab ?? "reading";
@@ -63,8 +92,12 @@ export function registerDesk() {
       );
     },
     onEvent: (e) => {
-      if (e.kind === "open" || e.kind === "back") picked = null;
-      else if (e.kind === "tap" && e.id.startsWith("tab-")) {
+      if (e.kind === "open" || e.kind === "back") {
+        picked = null;
+        clearedDrawer = false;
+      } else if (e.kind === "tap" && e.id === "exit-drawer") {
+        clearedDrawer = true;
+      } else if (e.kind === "tap" && e.id.startsWith("tab-")) {
         const tab = e.id.slice(4) as Tab;
         if (TABS.includes(tab)) picked = tab;
       }

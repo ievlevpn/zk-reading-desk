@@ -1,7 +1,20 @@
-// The settings screen (Plugins → Reading Desk: the inbox, the passage on or off, the pins) and its
-// inbox picker; and the item action that pins and unpins.
+// The settings screen (Plugins → Reading Desk: Home layout, inbox, passage on/off, pins), its
+// layout and inbox pickers, and the item action that pins and unpins.
 
-import { MAX_PINS, type Pin, inboxOf, loadPins, loadPrefs, ref, same, savePrefs } from "./data";
+import {
+  LAYOUTS,
+  MAX_PINS,
+  type Pin,
+  inboxOf,
+  isLayout,
+  layoutName,
+  layoutOf,
+  loadPins,
+  loadPrefs,
+  ref,
+  same,
+  savePrefs,
+} from "./data";
 
 /** "Probability / SPDEs", with the group's name for a group's collection. */
 const collectionName = (c: zk.Collection) => c.path.join(" / ") + (c.libraryId !== 0 ? ` (${c.libraryName})` : "");
@@ -51,6 +64,7 @@ export function registerSettings() {
     main: true,
     render: async () => {
       const prefs = await loadPrefs();
+      const layout = layoutOf(prefs);
       const inbox = inboxOf(prefs);
       let inboxName = "None: no inbox on Home";
       if (inbox) {
@@ -67,11 +81,17 @@ export function registerSettings() {
           zk.ui.list({
             id: "prefs",
             rows: [
+              {
+                id: "layout",
+                title: "Home layout",
+                subtitle: "Folio, Index Desk, or Reading Room",
+                meta: layoutName(layout),
+              },
               { id: "inbox", title: "Inbox collection", subtitle: inboxName },
               {
                 id: "passage",
                 title: "A passage each day",
-                subtitle: "One of your highlights on Home, a new one each day",
+                subtitle: "One of your highlights on Home, with Next ↻ to cycle",
                 meta: prefs.passage === false ? "Off" : "On",
               },
             ],
@@ -100,7 +120,8 @@ export function registerSettings() {
     },
     onEvent: async (e) => {
       if (e.kind === "select" && e.id === "prefs") {
-        if (e.row === "inbox") zk.ui.open("inbox");
+        if (e.row === "layout") zk.ui.open("layout");
+        else if (e.row === "inbox") zk.ui.open("inbox");
         else if (e.row === "passage") {
           const prefs = await loadPrefs();
           await savePrefs({ passage: prefs.passage === false });
@@ -115,6 +136,31 @@ export function registerSettings() {
         unpinAsk = null;
       } else if (e.kind === "back" || e.kind === "open") {
         unpinAsk = null;
+      }
+    },
+  });
+
+  /** The Home layout picker: Folio, Index Desk, or Reading Room. */
+  zk.screen("layout", {
+    title: "Home layout",
+    render: async () => {
+      const current = layoutOf(await loadPrefs());
+      return zk.ui.column([
+        zk.ui.list({
+          id: "layouts",
+          rows: LAYOUTS.map((l) => ({
+            id: l.id,
+            title: l.name,
+            subtitle: l.subtitle,
+            selected: l.id === current,
+          })),
+        }),
+      ]);
+    },
+    onEvent: async (e) => {
+      if (e.kind === "select" && e.id === "layouts" && isLayout(e.row)) {
+        await savePrefs({ layout: e.row });
+        zk.ui.close();
       }
     },
   });

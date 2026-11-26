@@ -1,5 +1,6 @@
-// What Reading Desk keeps and reads: pins, prefs, the inbox, the items in progress, the day's
-// passage, and the words it writes about items (bylines, percentages, "today").
+// What Reading Desk keeps and reads: pins, prefs (layout, inbox, passage), the items in progress,
+// inbox and collection walks, highlight summaries for last-highlight recall, the daily/cyclable
+// commonplace passage, and formatting helpers.
 
 declare global {
   namespace zk {
@@ -12,13 +13,38 @@ declare global {
 
 // ───────────────────────────── Stored state ─────────────────────────────
 
+/** One of the three selectable Home layouts. */
+export type HomeLayout = "folio" | "index" | "atelier";
+
+export const LAYOUTS: { id: HomeLayout; name: string; subtitle: string }[] = [
+  {
+    id: "folio",
+    name: "Folio",
+    subtitle: "Broadsheet hero with highlight recall, companion paper & catalog",
+  },
+  {
+    id: "index",
+    name: "Index Desk",
+    subtitle: "Zero-cover Swiss cards: ink/white diptych, card grid & Surprise me",
+  },
+  {
+    id: "atelier",
+    name: "Reading Room",
+    subtitle: "Book/Paper spotlight, captioned cover shelf, inbox & drawers",
+  },
+];
+
+export const isLayout = (v: unknown): v is HomeLayout => v === "folio" || v === "index" || v === "atelier";
+
+export const layoutName = (id: HomeLayout) => LAYOUTS.find((l) => l.id === id)?.name ?? "Folio";
+
 /** An item the user pinned. The library is kept so a group item opens from its own library. */
 export interface Pin {
   key: string;
   library: number;
 }
 
-/** A collection, as kept for the inbox. */
+/** A collection, as kept for the inbox or opened as a drawer. */
 export interface CollectionRef {
   key: string;
   library?: number;
@@ -26,17 +52,42 @@ export interface CollectionRef {
 
 /** What the settings screen sets (`zk.storage` "prefs"). */
 export interface Prefs {
+  /** Which Home layout to draw; default `"folio"`. */
+  layout?: HomeLayout;
   /** The inbox collection; `null`: none picked (settings.json is then ignored). Absent: not set yet. */
   inbox?: CollectionRef | null;
-  /** The daily passage; default on. */
+  /** The daily commonplace passage; default on. */
   passage?: boolean;
 }
 
-/** The day's passage, picked once a day (`zk.storage` "passage"). */
+/** A resolved passage highlight. */
+export interface PassagePick {
+  key: string;
+  itemKey: string;
+  library: number;
+  text: string;
+  source: string;
+}
+
+/** The day's passage, picked once a day or cycled by the user (`zk.storage` "passage"). */
 interface Passage {
   day: string;
+  offset?: number;
   /** Absent: there was no highlight to pick that day. */
-  pick?: { key: string; itemKey: string; library: number; text: string; source: string };
+  pick?: PassagePick;
+}
+
+/** Compact per-item highlight summary cached off-render for instant Home renders. */
+export interface HighlightEntry {
+  count: number;
+  snippet: string;
+  key: string;
+}
+
+export interface HighlightSummary {
+  day: string;
+  total: number;
+  byItem: Record<string, HighlightEntry>;
 }
 
 /** At most this many pins (the action refuses more). */
@@ -45,13 +96,15 @@ export const MAX_PINS = 50;
 const PAIR_WALK = 200;
 /** Opened items Your desk's Reading tab lists. */
 export const READING_WALK = 60;
-/** Inbox items looked at: past this, "99+". */
+/** Inbox / drawer items looked at: past this, "99+". */
 export const INBOX_CAP = 100;
 
 export const loadPins = async () => ((await zk.storage.get<Pin[]>("pins")) ?? []).slice(0, MAX_PINS);
 export const loadPrefs = async () => (await zk.storage.get<Prefs>("prefs")) ?? {};
 export const savePrefs = (change: Partial<Prefs>) =>
   zk.storage.update<Prefs>("prefs", (p = {}) => ({ ...p, ...change }));
+
+export const layoutOf = (prefs: Prefs): HomeLayout => (isLayout(prefs.layout) ? prefs.layout : "folio");
 
 /** The inbox: picked on the settings screen, else 0.1's settings.json. */
 export function inboxOf(prefs: Prefs): CollectionRef | null {
@@ -80,18 +133,24 @@ export async function inProgress(limit: number): Promise<zk.Item[]> {
 }
 
 /**
- * The book and the paper being read: the most recently opened unread one of each. The walk
- * (lazy, most recent first) stops once it has both, or after PAIR_WALK items.
+ * The book and the paper being read: the most recently opened unread one of each, plus the first
+ * `recentCap` opened items for inline lists.
  */
-export async function openedPair(): Promise<{ book?: zk.Item; paper?: zk.Item }> {
+export async function openedOverview(recentCap = 20): Promise<{
+  book?: zk.Item;
+  paper?: zk.Item;
+  recent: zk.Item[];
+}> {
   let book: zk.Item | undefined;
   let paper: zk.Item | undefined;
+  const recent: zk.Item[] = [];
   for await (const item of zk.library.items({ opened: true, read: false, limit: PAIR_WALK })) {
+    if (recent.length < recentCap) recent.push(item);
     if (isBook(item)) book ??= item;
     else paper ??= item;
-    if (book && paper) break;
+    if (book && paper && recent.length >= recentCap) break;
   }
-  return { book, paper };
+  return { book, paper, recent };
 }
 
 /** The pinned items that still exist, in pin order. */
@@ -101,16 +160,52 @@ export async function pinnedItems(pins: Pin[]): Promise<zk.Item[]> {
 }
 
 /**
- * The inbox's newest unread items, at most INBOX_CAP: the walk is the app's order, newest added
- * first, and stops there, so a big inbox costs a render no more than a small one ("99+").
+ * The inbox's newest unread items, at most INBOX_CAP: newest added first.
  */
 export async function inboxItems(inbox: CollectionRef): Promise<zk.Item[]> {
   const unread: zk.Item[] = [];
   const query: zk.ItemsQuery = { collection: inbox.key, read: false, limit: INBOX_CAP };
   if (inbox.library !== undefined) query.library = inbox.library;
   for await (const item of zk.library.items(query)) unread.push(item);
-  // ISO 8601 strings of one format sort as text.
   return unread.sort((a, b) => (a.addedAt < b.addedAt ? 1 : a.addedAt > b.addedAt ? -1 : 0));
+}
+
+/** Items in a collection drawer (both read and unread, newest added first). */
+export async function collectionItems(col: CollectionRef): Promise<zk.Item[]> {
+  const out: zk.Item[] = [];
+  const query: zk.ItemsQuery = { collection: col.key, limit: INBOX_CAP };
+  if (col.library !== undefined) query.library = col.library;
+  for await (const item of zk.library.items(query)) out.push(item);
+  return out.sort((a, b) => (a.addedAt < b.addedAt ? 1 : a.addedAt > b.addedAt ? -1 : 0));
+}
+
+/** Pick a random unread item (preferring inbox & unstarted pins, avoiding currently active keys). */
+export async function pickSurpriseItem(excludeKeys: Set<string>): Promise<zk.Item | null> {
+  const prefs = await loadPrefs();
+  const inbox = inboxOf(prefs);
+  const [pins, unreadInbox] = await Promise.all([loadPins(), inbox ? inboxItems(inbox) : Promise.resolve([])]);
+  const pinned = await pinnedItems(pins);
+  const pool: zk.Item[] = [];
+  const seen = new Set(excludeKeys);
+  const pushUnique = (items: zk.Item[]) => {
+    for (const i of items) {
+      if (i.read || seen.has(i.key)) continue;
+      seen.add(i.key);
+      pool.push(i);
+    }
+  };
+  pushUnique(unreadInbox);
+  pushUnique(pinned.filter((i) => i.openedAt === null));
+  if (pool.length === 0) {
+    for await (const item of zk.library.items({ read: false, limit: 80 })) {
+      if (!seen.has(item.key)) {
+        seen.add(item.key);
+        pool.push(item);
+      }
+    }
+  }
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
 }
 
 /** "12", or "99+" when the walk stopped at its cap. */
@@ -136,8 +231,22 @@ export const bylineOf = (i: zk.Item) => [authorsOf(i, { most: 4 }), i.year ?? ""
 /** "42%" of an item opened here; "" if never. */
 export const percentOf = (i: zk.Item) => (i.progress === null ? "" : `${Math.round(i.progress * 100)}%`);
 
+/** Compact uppercase type/format badge ("EPUB", "PDF", "PREPRINT", "ARTICLE", "BOOK"). */
+export function typeLabel(item: zk.Item): string {
+  if (item.format) return item.format;
+  if (item.type === "preprint") return "PREPRINT";
+  if (item.type === "journalArticle") return "ARTICLE";
+  if (item.type === "book" || item.type === "bookSection") return "BOOK";
+  return "PAPER";
+}
+
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** "NOV 26" in local Kindle time. */
+export function todayStamp(now = new Date()): string {
+  return `${MONTHS[now.getMonth()].toUpperCase()} ${now.getDate()}`;
+}
 
 /**
  * When, in the Kindle's local time: "today", "yesterday", a weekday within the week ("Mon"),
@@ -156,9 +265,9 @@ export function whenOf(iso: string | null, now = new Date()): string {
   return d.getFullYear() === now.getFullYear() ? date : `${date}, ${d.getFullYear()}`;
 }
 
-// ───────────────────────────── The passage ─────────────────────────────
+// ───────────────────────────── Highlights & Commonplace ─────────────────────────────
 
-/** Today on this Kindle, "2026-11-20". */
+/** Today on this Kindle, "2026-11-26". */
 function today(): string {
   const d = new Date();
   const two = (n: number) => String(n).padStart(2, "0");
@@ -172,12 +281,79 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
+const EMPTY_HL: HighlightSummary = { day: "", total: 0, byItem: {} };
+let summaryDirty = false;
+let refreshingSummary = false;
+
+/**
+ * Cached highlight summary (total count + latest snippet & count per item). Instant single storage
+ * read during render; refreshed asynchronously when stale or after highlight/sync events.
+ */
+export async function keptHighlightSummary(): Promise<HighlightSummary> {
+  const kept = await zk.storage.get<HighlightSummary>("hlSummary");
+  if (!kept || kept.day !== today() || summaryDirty) refreshSummaryLater();
+  return kept ?? EMPTY_HL;
+}
+
+function refreshSummaryLater() {
+  if (refreshingSummary) return;
+  refreshingSummary = true;
+  setTimeout(async () => {
+    try {
+      await buildHighlightSummary();
+      summaryDirty = false;
+      zk.ui.refresh();
+    } catch (err) {
+      console.warn("highlight summary couldn't refresh:", err);
+    } finally {
+      refreshingSummary = false;
+    }
+  }, 0);
+}
+
+async function buildHighlightSummary(): Promise<void> {
+  const byItem: Record<string, HighlightEntry> = {};
+  let total = 0;
+  for await (const a of zk.library.recentAnnotations({ limit: 300 })) {
+    if (a.type !== "highlight" && a.type !== "underline") continue;
+    total++;
+    const text = a.text?.trim() ?? "";
+    const cur = byItem[a.itemKey];
+    if (!cur) {
+      byItem[a.itemKey] = {
+        count: 1,
+        snippet: text.length >= 24 ? text.slice(0, 180) : "",
+        key: a.key,
+      };
+    } else {
+      cur.count++;
+      if (!cur.snippet && text.length >= 24) {
+        cur.snippet = text.slice(0, 180);
+        cur.key = a.key;
+      }
+    }
+  }
+  await zk.storage.set("hlSummary", { day: today(), total, byItem } satisfies HighlightSummary);
+}
+
+/** Register event listeners so highlight snippets & counts stay fresh after reading or syncing. */
+export function registerHighlightWatchers() {
+  const markDirty = () => {
+    summaryDirty = true;
+    refreshSummaryLater();
+  };
+  zk.on("highlightCreated", markDirty);
+  zk.on("highlightChanged", markDirty);
+  zk.on("highlightDeleted", markDirty);
+  zk.on("syncFinished", markDirty);
+}
+
 /**
  * The passage a render shows: the one kept in storage (one read). When it isn't today's, today's
  * is picked off the render (a timer) and the screen refreshed; until then the kept one shows, so
  * the page doesn't jump twice.
  */
-export async function keptPassage(): Promise<Passage["pick"]> {
+export async function keptPassage(): Promise<PassagePick | undefined> {
   const kept = await zk.storage.get<Passage>("passage");
   if (kept?.day !== today()) pickLater();
   return kept?.pick;
@@ -189,7 +365,7 @@ function pickLater() {
   picking = true;
   setTimeout(async () => {
     try {
-      await pickPassage();
+      await pickPassage(0);
       zk.ui.refresh();
     } catch (err) {
       console.warn("the passage couldn't be picked:", err);
@@ -199,27 +375,34 @@ function pickLater() {
   }, 0);
 }
 
+/** Advance to the next highlight right away (called from the user's `Next ↻` tap). */
+export async function cyclePassage(): Promise<void> {
+  const kept = await zk.storage.get<Passage>("passage");
+  const nextOffset = kept?.day === today() ? (kept.offset ?? 0) + 1 : 1;
+  await pickPassage(nextOffset);
+}
+
 /**
- * Today's passage: a highlight of 40–400 characters from the newest 300, picked by the date (so
- * the same all day), and kept in storage.
+ * Picks a highlight of 40–400 characters from the newest 300, deterministic for `(day, offset)`.
  */
-async function pickPassage(): Promise<void> {
+async function pickPassage(offset: number): Promise<void> {
   const day = today();
   const candidates: zk.Annotation[] = [];
   for await (const a of zk.library.recentAnnotations({ limit: 300 })) {
     const text = a.text?.trim() ?? "";
     if (a.type === "highlight" && text.length >= 40 && text.length <= 400) candidates.push(a);
   }
-  let pick: Passage["pick"];
-  // Some highlights' items may be gone or switched off: try from the day's index on.
+  let pick: PassagePick | undefined;
   for (let n = 0; n < candidates.length && !pick; n++) {
-    const a = candidates[(hash(day) + n) % candidates.length];
+    const a = candidates[(hash(day) + offset + n) % candidates.length];
     const item = await zk.library.item(a.itemKey);
     if (!item) continue;
-    const source = [item.title || "Untitled", a.pageLabel ? `p. ${a.pageLabel}` : ""].filter(Boolean).join(" · ");
+    const source = [item.title || "Untitled", authorsOf(item, { most: 1 }), a.pageLabel ? `p. ${a.pageLabel}` : ""]
+      .filter(Boolean)
+      .join(" · ");
     pick = { key: a.key, itemKey: a.itemKey, library: a.libraryId, text: a.text!.trim(), source };
   }
-  await zk.storage.set("passage", { day, pick } satisfies Passage);
+  await zk.storage.set("passage", { day, offset, pick } satisfies Passage);
 }
 
 /**

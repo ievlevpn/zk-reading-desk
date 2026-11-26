@@ -1,21 +1,20 @@
-// Reading Desk — a Home written by a plugin, composed only from the app's primitives (zk.ui:
-// rows, columns, text, boxes, covers, bars, items, grids). Nothing on it is drawn by
-// Reading-Desk-specific code in the app.
+// Reading Desk — a Home written by a plugin, composed only from the app's primitives (zk.ui).
+// Offers three selectable Home layouts in Plugins → Reading Desk → Home layout:
+//   - Folio        — editorial broadsheet with ink hero, last highlight recall, shaded companion
+//                    paper, inline shelf tabs, numbered catalog, and commonplace quote
+//   - Index Desk   — Swiss typographic cards (zero covers): black/white diptych, telemetry bar
+//                    with Surprise me, 2×2/3×2 index card grid, and shaded excerpt
+//   - Reading Room — full-width Book|Paper spotlight, captioned cover shelf, side-by-side Inbox
+//                    + Commonplace, and one-tap collection drawers
 //
-//   home.ts       Home's body (screen `desk`): the book and the paper being read, a row of pins,
-//                 the inbox or a passage from your highlights; trimmed to the page, never paged
-//   desk.ts       Your desk (screen `all`): Reading · Pinned · Inbox, a paged grid of covers
-//   settings.ts   Plugins → Reading Desk (inbox, passage, pins), the inbox picker, the pin action
-//   pieces.ts     the composed pieces: a label, a heading with a link, the pair's side, a row of
-//                 covers, text lines, a segmented switch, a grid of captioned covers
-//   data.ts       storage, the walks over the library, the passage, bylines and dates
-//
-// Permissions: "library:read" (the items, the collections) and "annotations:read" (the passage).
+// Permissions: "library:read" (items, collections) and "annotations:read" (highlights & passage).
 
+import { registerHighlightWatchers } from "./data";
 import { registerDesk } from "./desk";
 import { registerHome } from "./home";
 import { registerSettings } from "./settings";
 
+registerHighlightWatchers();
 registerHome();
 registerDesk();
 registerSettings();
